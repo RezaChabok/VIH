@@ -1,6 +1,7 @@
 import requests
 from bs4 import BeautifulSoup
 import json
+import sys
 from database import get_session, Post
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -14,11 +15,12 @@ class MediumScraper:
     def fetch_and_process(self, keyword, bot):
         session = get_session()
         url = f"{self.base_url}{keyword}"
+        
         try:
             response = requests.get(url, headers=self.headers, timeout=15)
             response.raise_for_status()
         except requests.exceptions.RequestException as e:
-            print(f"Error fetching Medium for '{keyword}': {e}")
+            print(f"MEDIUM NETWORK ERROR for '{keyword}': {e}", file=sys.stderr)
             session.close()
             return
 
@@ -26,7 +28,10 @@ class MediumScraper:
         data = self._extract_data(soup)
 
         if not data:
-            print(f"No data extracted for keyword '{keyword}'")
+            print(f"MEDIUM PARSE FAILED for '{keyword}': No data structure matched.", file=sys.stderr)
+            with open('medium_debug.html', 'w') as f:
+                f.write(response.text[:5000])
+            print(f"Saved debug HTML to medium_debug.html", file=sys.stderr)
             session.close()
             return
 
@@ -34,7 +39,6 @@ class MediumScraper:
         session.close()
 
     def _extract_data(self, soup):
-        
         scripts = soup.find_all('script')
         for script in scripts:
             if not script.string:
@@ -46,14 +50,16 @@ class MediumScraper:
                     json_str = text[len(prefix):]
                     try:
                         data = json.loads(json_str)
-                        return data
+                        if data:
+                            return data
                     except json.JSONDecodeError:
                         continue
-                        
+
             if script.get('type') == 'application/json':
                 try:
                     data = json.loads(text)
-                    return data
+                    if data:
+                        return data
                 except json.JSONDecodeError:
                     continue
 
@@ -75,7 +81,7 @@ class MediumScraper:
                 if key.startswith('Post:'):
                     posts.append(value)
         
-        elif isinstance(data, dict) and 'jsonld' in data:
+        if isinstance(data, dict) and 'jsonld' in data:
             ld = data['jsonld']
             if isinstance(ld, list):
                 for item in ld:
@@ -93,15 +99,11 @@ class MediumScraper:
             medium_url = post.get('mediumUrl') or post.get('canonicalUrl') or post.get('url')
             if not medium_url:
                 post_id = post.get('id') or post.get('identifier')
-                slug = post.get('slug')
                 if post_id:
                     medium_url = f"https://medium.com/p/{post_id}"
-                elif slug:
-                    medium_url = f"https://medium.com/p/{slug}"
                 else:
                     continue
 
-            
             try:
                 existing = session.query(Post).filter_by(link=medium_url).first()
                 if not existing:
@@ -109,7 +111,7 @@ class MediumScraper:
                     session.add(Post(link=medium_url, title=title))
                     session.commit()
             except SQLAlchemyError as e:
-                print(f"Database error for post '{title}': {e}")
+                print(f"Database error for post '{title}': {e}", file=sys.stderr)
                 session.rollback()
             except Exception as e:
-                print(f"Unexpected error for post '{title}': {e}")
+                print(f"Unexpected error for post '{title}': {e}", file=sys.stderr)
