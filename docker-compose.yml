@@ -1,0 +1,37 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: vih_db
+      POSTGRES_USER: vih_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-vih_secure_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vih_user -d vih_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://vih_user:${DB_PASSWORD:-vih_secure_pass}@db:5432/vih_db
+      TELEGRAM_BOT1_TOKEN: ${TELEGRAM_BOT1_TOKEN}
+      TELEGRAM_BOT2_TOKEN: ${TELEGRAM_BOT2_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      RAPIDAPI_KEY: ${RAPIDAPI_KEY}
+    volumes:
+      - .:/app
+    command: python main.py
+
+volumes:
+  postgres_data:
