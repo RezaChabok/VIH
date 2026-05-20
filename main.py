@@ -88,12 +88,12 @@ def main():
 
     for keyword in keywords:
         print(f"Processing: {keyword}")
-        try:
-            twitter.process(keyword, bot)
-        except Exception as e:
-            print(f"Twitter error for '{keyword}': {e}", file=sys.stderr)
+        # try:
+        #     twitter.process(keyword, bot)
+        # except Exception as e:
+        #     print(f"Twitter error for '{keyword}': {e}", file=sys.stderr)
 
-        time.sleep(1)
+        # time.sleep(1)
 
         print(f"Starting Medium for: {keyword}")
         try:
