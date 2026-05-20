@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 from database import get_session, Post
-from config import RAPIDAPI_KEY
+from sqlalchemy.exc import SQLAlchemyError
 
 class MediumScraper:
     def __init__(self):
@@ -23,34 +23,93 @@ class MediumScraper:
             return
 
         soup = BeautifulSoup(response.text, 'html.parser')
-
-        scripts = soup.find_all('script')
-        data = None
-        for script in scripts:
-            if script.string and script.string.strip().startswith('window.__APOLLO_STATE__'):
-                json_str = script.string.strip()[len('window.__APOLLO_STATE__ = '):]
-                try:
-                    data = json.loads(json_str)
-                    break
-                except json.JSONDecodeError:
-                    continue
+        data = self._extract_data(soup)
 
         if not data:
-            print(f"No JSON data found for keyword '{keyword}'")
+            print(f"No data extracted for keyword '{keyword}'")
             session.close()
             return
 
-        for key, value in data.items():
-            if key.startswith('Post:'):
-                title = value.get('title')
-                medium_url = value.get('mediumUrl')
-                if title and medium_url:
-                    existing = session.query(Post).filter_by(link=medium_url).first()
-                    if not existing:
-                        try:
-                            bot.send_message(f"{title}\n{medium_url}", bot_number=2)
-                            session.add(Post(link=medium_url, title=title))
-                            session.commit()
-                        except Exception as e:
-                            print(f"Failed to send Medium post: {e}")
+        self._process_posts(data, bot, session)
         session.close()
+
+    def _extract_data(self, soup):
+        
+        scripts = soup.find_all('script')
+        for script in scripts:
+            if not script.string:
+                continue
+            text = script.string.strip()
+
+            for prefix in ['window.__APOLLO_STATE__ = ', 'window.__PRELOADED_STATE__ = ']:
+                if text.startswith(prefix):
+                    json_str = text[len(prefix):]
+                    try:
+                        data = json.loads(json_str)
+                        return data
+                    except json.JSONDecodeError:
+                        continue
+                        
+            if script.get('type') == 'application/json':
+                try:
+                    data = json.loads(text)
+                    return data
+                except json.JSONDecodeError:
+                    continue
+
+        jsonld_scripts = soup.find_all('script', type='application/ld+json')
+        for script in jsonld_scripts:
+            try:
+                data = json.loads(script.string)
+                return {'jsonld': data}
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+        return None
+
+    def _process_posts(self, data, bot, session):
+        posts = []
+        
+        if isinstance(data, dict):
+            for key, value in data.items():
+                if key.startswith('Post:'):
+                    posts.append(value)
+        
+        elif isinstance(data, dict) and 'jsonld' in data:
+            ld = data['jsonld']
+            if isinstance(ld, list):
+                for item in ld:
+                    if isinstance(item, dict) and item.get('@type') in ('Article', 'BlogPosting', 'SocialMediaPosting'):
+                        posts.append(item)
+            elif isinstance(ld, dict):
+                if ld.get('@type') in ('Article', 'BlogPosting', 'SocialMediaPosting'):
+                    posts.append(ld)
+
+        for post in posts:
+            title = post.get('title') or post.get('name') or post.get('headline')
+            if not title:
+                continue
+
+            medium_url = post.get('mediumUrl') or post.get('canonicalUrl') or post.get('url')
+            if not medium_url:
+                post_id = post.get('id') or post.get('identifier')
+                slug = post.get('slug')
+                if post_id:
+                    medium_url = f"https://medium.com/p/{post_id}"
+                elif slug:
+                    medium_url = f"https://medium.com/p/{slug}"
+                else:
+                    continue
+
+            
+            try:
+                existing = session.query(Post).filter_by(link=medium_url).first()
+                if not existing:
+                    bot.send_message(f"{title}\n{medium_url}", bot_number=2)
+                    session.add(Post(link=medium_url, title=title))
+                    session.commit()
+            except SQLAlchemyError as e:
+                print(f"Database error for post '{title}': {e}")
+                session.rollback()
+            except Exception as e:
+                print(f"Unexpected error for post '{title}': {e}")
