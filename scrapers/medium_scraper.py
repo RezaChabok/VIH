@@ -6,7 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 class MediumScraper:
     def __init__(self):
-        self.base_url = 'https://medium.com/feed/search?q='
+        self.base_url = 'https://medium.com/search?q='
 
     def fetch_and_process(self, keyword, bot):
         session = get_session()
