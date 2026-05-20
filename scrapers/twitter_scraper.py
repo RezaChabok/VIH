@@ -1,7 +1,8 @@
 import requests
 import re
-from config import RAPIDAPI_KEY
+import time
 from database import get_session, Tweet
+from config import RAPIDAPI_KEY
 
 class TwitterScraper:
     def __init__(self):
@@ -18,11 +19,13 @@ class TwitterScraper:
     def process(self, keyword, bot):
         session = get_session()
         data = self.fetch(keyword)
-        tweets = re.findall(r"'tweet_id': '(.+?)', .+?, 'text': '(.+?)', .+?}", str(data), re.DOTALL)
+        pattern = r"'tweet_id': '(.+?)', .+?, 'text': '(.+?)', .+?}"
+        tweets = re.findall(pattern, str(data), re.DOTALL)
+
         for tweet_id, text in tweets:
             if not session.query(Tweet).filter_by(id=tweet_id).first():
                 link = f"https://x.com/user/status/{tweet_id}"
-                asyncio.run(bot.send_message(f"New Tweet:\n{text}\n{link}"))
+                bot.send_message(f"New Tweet:\n{text}\n{link}")
                 session.add(Tweet(id=tweet_id, text=text))
                 session.commit()
         session.close()
