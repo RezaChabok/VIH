@@ -1,6 +1,8 @@
 from sqlalchemy import Column, Integer, String, create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
-from config import DATABASE_URL
+import os
+
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///security_feed.db')
 
 Base = declarative_base()
 
