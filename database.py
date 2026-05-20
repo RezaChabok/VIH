@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, create_engine
+from sqlalchemy import Column, BigInteger, String, create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 import os
 
@@ -8,7 +8,7 @@ Base = declarative_base()
 
 class Tweet(Base):
     __tablename__ = 'tweets'
-    id = Column(Integer, primary_key=True)
+    id = Column(BigInteger, primary_key=True)
     text = Column(String)
 
 class Post(Base):
