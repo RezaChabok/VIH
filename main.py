@@ -95,14 +95,14 @@ def main():
 
         time.sleep(1)
 
-        # print(f"Starting Medium for: {keyword}")
-        # try:
-        #     medium.fetch_and_process(keyword, bot)
-        # except Exception as e:
-        #     print(f"Medium error for '{keyword}': {e}", file=sys.stderr)
-        # print(f"Finished Medium for: {keyword}")
+        print(f"Starting Medium for: {keyword}")
+        try:
+            medium.fetch_and_process(keyword, bot)
+        except Exception as e:
+            print(f"Medium error for '{keyword}': {e}", file=sys.stderr)
+        print(f"Finished Medium for: {keyword}")
 
-        # time.sleep(2)
+        time.sleep(2)
 
     bot.send_message(f"Daily security feed completed at {datetime.datetime.now()}")
     bot.send_message(f"Daily security feed completed at {datetime.datetime.now()}", 2)
