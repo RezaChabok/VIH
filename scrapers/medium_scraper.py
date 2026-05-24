@@ -1,28 +1,31 @@
 import requests
 import sys
+import time
 from database import get_session, Post
 from sqlalchemy.exc import SQLAlchemyError
 from config import RAPIDAPI_KEY_MEDIUM
 
 class MediumScraper:
     def __init__(self):
-        self.api_url = "https://medium2.p.rapidapi.com/search/articles"
+        self.base_url = "https://medium2.p.rapidapi.com"
         self.headers = {
-            "X-RapidAPI-Key": RAPIDAPI_KEY_MEDIUM,
-            "X-RapidAPI-Host": "medium2.p.rapidapi.com",
-            "Content-Type": "application/json"
+            "x-rapidapi-key": RAPIDAPI_KEY_MEDIUM,
+            "x-rapidapi-host": "medium2.p.rapidapi.com"
         }
 
     def fetch_and_process(self, keyword, bot):
         session = get_session()
-        posts = self._fetch_posts(keyword)
-
-        if posts is None:
-            print(f"RapidAPI failed for '{keyword}' – skipping.", file=sys.stderr)
+        article_ids = self._search_articles(keyword)
+        if not article_ids:
+            print(f"No articles found for '{keyword}'", file=sys.stderr)
             session.close()
             return
 
-        for post in posts:
+        for article_id in article_ids[:5]:
+            post = self._get_article_info(article_id)
+            if not post:
+                continue
+            
             title = post.get('title')
             link = post.get('url')
             if not title or not link:
@@ -39,40 +42,42 @@ class MediumScraper:
                 session.rollback()
             except Exception as e:
                 print(f"Send error for '{title}': {e}", file=sys.stderr)
+            
+            time.sleep(1)
 
         session.close()
 
-    def _fetch_posts(self, keyword):
+    def _search_articles(self, query):
         try:
-            params = {"q": keyword, "limit": 10}
-            resp = requests.get(self.api_url, headers=self.headers, params=params, timeout=15)
+            resp = requests.get(
+                f"{self.base_url}/search/articles",
+                headers=self.headers,
+                params={"query": query},
+                timeout=15
+            )
             resp.raise_for_status()
             data = resp.json()
+            
+            if isinstance(data, dict) and 'articles' in data:
+                return data['articles']
+            elif isinstance(data, list):
+                return data
+            else:
+                print(f"Unexpected search response: {data}", file=sys.stderr)
+                return []
         except Exception as e:
-            print(f"RapidAPI request error: {e}", file=sys.stderr)
-            return None
+            print(f"Search error for '{query}': {e}", file=sys.stderr)
+        return []
 
-        return self._extract_posts(data)
-
-    def _extract_posts(self, data):
-        candidates = []
-        if isinstance(data, list):
-            candidates = data
-        elif isinstance(data, dict):
-            for key in ('articles', 'items', 'data', 'results', 'posts'):
-                items = data.get(key)
-                if isinstance(items, list):
-                    candidates = items
-                    break
-            if not candidates and 'title' in data:
-                candidates = [data]
-
-        posts = []
-        for item in candidates:
-            if not isinstance(item, dict):
-                continue
-            title = item.get('title') or item.get('name')
-            link = item.get('url') or item.get('link') or item.get('mediumUrl')
-            if title and link:
-                posts.append({'title': title, 'url': link})
-        return posts
+    def _get_article_info(self, article_id):
+        try:
+            resp = requests.get(
+                f"{self.base_url}/article/{article_id}",
+                headers=self.headers,
+                timeout=15
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"Article info error for {article_id}: {e}", file=sys.stderr)
+        return None
