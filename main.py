@@ -88,23 +88,24 @@ def main():
 
     for keyword in keywords:
         print(f"Processing: {keyword}")
-        # try:
-        #     twitter.process(keyword, bot)
-        # except Exception as e:
-        #     print(f"Twitter error for '{keyword}': {e}", file=sys.stderr)
-
-        # time.sleep(1)
-
-        print(f"Starting Medium for: {keyword}")
         try:
-            medium.fetch_and_process(keyword, bot)
+            twitter.process(keyword, bot)
         except Exception as e:
-            print(f"Medium error for '{keyword}': {e}", file=sys.stderr)
-        print(f"Finished Medium for: {keyword}")
+            print(f"Twitter error for '{keyword}': {e}", file=sys.stderr)
 
-        time.sleep(2)
+        time.sleep(1)
+
+        # print(f"Starting Medium for: {keyword}")
+        # try:
+        #     medium.fetch_and_process(keyword, bot)
+        # except Exception as e:
+        #     print(f"Medium error for '{keyword}': {e}", file=sys.stderr)
+        # print(f"Finished Medium for: {keyword}")
+
+        # time.sleep(2)
 
     bot.send_message(f"Daily security feed completed at {datetime.datetime.now()}")
+    bot.send_message(f"Daily security feed completed at {datetime.datetime.now()}", 2)
 
 if __name__ == "__main__":
     main()

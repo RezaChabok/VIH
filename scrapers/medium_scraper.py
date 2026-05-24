@@ -1,34 +1,30 @@
 import requests
-import xml.etree.ElementTree as ET
 import sys
 from database import get_session, Post
 from sqlalchemy.exc import SQLAlchemyError
+from config import RAPIDAPI_KEY_MEDIUM
 
 class MediumScraper:
     def __init__(self):
-        self.base_url = 'https://medium.com/search?q='
+        self.api_url = "https://medium2.p.rapidapi.com/search/articles"
+        self.headers = {
+            "X-RapidAPI-Key": RAPIDAPI_KEY_MEDIUM,
+            "X-RapidAPI-Host": "medium2.p.rapidapi.com",
+            "Content-Type": "application/json"
+        }
 
     def fetch_and_process(self, keyword, bot):
         session = get_session()
-        url = f"{self.base_url}{keyword}"
-        
-        try:
-            response = requests.get(url, timeout=15)
-            response.raise_for_status()
-        except requests.exceptions.RequestException as e:
-            print(f"MEDIUM RSS ERROR for '{keyword}': {e}", file=sys.stderr)
-            session.close()
-            return
+        posts = self._fetch_posts(keyword)
 
-        posts = self._parse_rss(response.text)
-        if not posts:
-            print(f"MEDIUM RSS PARSE FAILED for '{keyword}': No entries found.", file=sys.stderr)
+        if posts is None:
+            print(f"RapidAPI failed for '{keyword}' – skipping.", file=sys.stderr)
             session.close()
             return
 
         for post in posts:
             title = post.get('title')
-            link = post.get('link')
+            link = post.get('url')
             if not title or not link:
                 continue
 
@@ -39,24 +35,44 @@ class MediumScraper:
                     session.add(Post(link=link, title=title))
                     session.commit()
             except SQLAlchemyError as e:
-                print(f"Database error for post '{title}': {e}", file=sys.stderr)
+                print(f"DB error for '{title}': {e}", file=sys.stderr)
                 session.rollback()
             except Exception as e:
-                print(f"Unexpected error for post '{title}': {e}", file=sys.stderr)
+                print(f"Send error for '{title}': {e}", file=sys.stderr)
+
         session.close()
 
-    def _parse_rss(self, xml_content):
-        posts = []
+    def _fetch_posts(self, keyword):
         try:
-            root = ET.fromstring(xml_content)
-            channel = root.find('channel')
-            if channel is None:
-                return posts
-            for item in channel.findall('item'):
-                title = item.findtext('title')
-                link = item.findtext('link')
-                if title and link:
-                    posts.append({'title': title, 'link': link})
-        except ET.ParseError as e:
-            print(f"XML Parse Error: {e}", file=sys.stderr)
+            params = {"q": keyword, "limit": 10}
+            resp = requests.get(self.api_url, headers=self.headers, params=params, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as e:
+            print(f"RapidAPI request error: {e}", file=sys.stderr)
+            return None
+
+        return self._extract_posts(data)
+
+    def _extract_posts(self, data):
+        candidates = []
+        if isinstance(data, list):
+            candidates = data
+        elif isinstance(data, dict):
+            for key in ('articles', 'items', 'data', 'results', 'posts'):
+                items = data.get(key)
+                if isinstance(items, list):
+                    candidates = items
+                    break
+            if not candidates and 'title' in data:
+                candidates = [data]
+
+        posts = []
+        for item in candidates:
+            if not isinstance(item, dict):
+                continue
+            title = item.get('title') or item.get('name')
+            link = item.get('url') or item.get('link') or item.get('mediumUrl')
+            if title and link:
+                posts.append({'title': title, 'url': link})
         return posts
