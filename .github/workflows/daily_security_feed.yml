@@ -1,4 +1,4 @@
-name: Daily Vulnerability Intelligence Feed (VIH)
+name: Daily Security Feed
 
 on:
   schedule:
@@ -6,28 +6,22 @@ on:
   workflow_dispatch:
 
 jobs:
-  collect-intelligence:
+  run-feed:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env:
-          POSTGRES_DB: vih_ci
-          POSTGRES_USER: vih_ci_user
-          POSTGRES_PASSWORD: vih_ci_pass
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Restore database from cache
+        id: cache-db
+        uses: actions/cache@v4
+        with:
+          path: vih.db
+          key: vih-database      # کلید ثابت – همیشه همون فایل رو برمی‌گردونه
+          restore-keys: |
+            vih-database
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,13 +29,11 @@ jobs:
           python-version: '3.10'
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
-      - name: Run Vulnerability Intelligence Hub (Main Bot)
+      - name: Run VIH Bot
         env:
-          DATABASE_URL: postgresql://vih_ci_user:vih_ci_pass@localhost:5432/vih_ci
+          DATABASE_URL: sqlite:///vih.db
           TELEGRAM_BOT1_TOKEN: ${{ secrets.TELEGRAM_BOT1_TOKEN }}
           TELEGRAM_BOT2_TOKEN: ${{ secrets.TELEGRAM_BOT2_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -49,9 +41,8 @@ jobs:
           RAPIDAPI_KEY_MEDIUM: ${{ secrets.RAPIDAPI_KEY_MEDIUM }}
         run: python main.py
 
-      - name: Upload error log if failed
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Upload updated database to cache
+        uses: actions/cache@v4
         with:
-          name: vih-error-log
-          path: error.log
+          path: vih.db
+          key: vih-database
